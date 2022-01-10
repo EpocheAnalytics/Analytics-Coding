@@ -1,0 +1,256 @@
+install.packages("rpart")
+install.packages("rpart.plot")
+install.packages("ROCR")
+install.packages("ggplot2")
+install.packages("caret")
+install.packages("tidyverse")
+install.packages("ROCR")
+install.packages("randomForest")
+
+library(ROCR)
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(tidyverse)
+library(randomForest)
+
+#where is R studio running, typically C drive
+getwd()
+
+#used to set directory
+setwd()
+#setwd is used to change the working directory 
+
+
+mydata <- read.table("salary_data.csv", sep=",", header=T, strip.white = T,
+                     na.strings = c("NA","NaN", "", "?"))
+#na.strings tells R that they are missing values
+
+
+head(mydata)
+summary(mydata)
+str(mydata)
+veiw(mydata)
+
+#removes rows with missing data
+mydata1 <- mydata[complete.cases(mydata),]
+
+setwd("~/Dropbox (UNC Charlotte)/uncc_courses/3000_Reza/week2/")
+
+typeof(mydata$workclass)
+#inferior to STR()
+
+# %>% is a tidyverse / dpyler function
+mydata <- mydata %>%
+  select(-c(fnlwgt,education.num,relationship))
+# -c means everything except 
+
+mydata <- mydata %>% 
+  mutate_at(c("education","martital.status","occupation",
+              "race","sex","native.country","salary.class"),
+            factor)
+#at each one of these variables recreate them as factors 
+
+mydata <- mydata %>% 
+  drop_na()
+#drop all the observations with missing values
+
+# Since the data is large, we sample 5k observations to save time in class:
+mydata <- mydata %>%
+  sample_n(5000)
+
+# If you do not have an ID per row, use the following code to create an ID:
+mydata <- mydata %>% mutate(id = row_number())
+
+# Create the training set:
+train_data <- mydata %>% sample_frac(.70)
+summary(train_data)
+
+#compares train data from my data to pull out the results that aren't
+#in train data. In this case it compares off of id
+test_data  <- anti_join(mydata, train_data, by = 'id')
+summary(test_data)
+
+#train is a function from caret
+# the "." is used to indicate a formula, means to use everything in equation except target
+# "-" means remove from formula
+# 
+dt_caret <- train(make.names(salary.class) ~ . - id, data = train_data,
+                  method = "rpart")
+dt_caret
+#plot the Decision Tree
+plot(dt_caret)
+
+#  Use the classifier to make the predictions.
+predicted_values <- predict(dt_caret, test_data, type= "prob") 
+
+#change the column names
+colnames(predicted_values) <- c("prob_zero","prob_one")
+
+threshold <- 0.5 # Set the threshold for converting the probabilities to
+
+# We ask R to use the threshold and convert the probabilities to class labels (zero and one)
+pred <- factor( ifelse(predicted_values[,2] > threshold, 1, 0) ) 
+
+#
+confusionMatrix(pred, test_data$salary.class, 
+                positive = levels(test_data$salary.class)[2])
+
+######################################################################
+#rANDOM FOREST
+
+rf_caret <- train(make.names(salary.class) ~ . - id, data = train_data,
+                  method = "rf")
+
+predicted_values <- predict(rf_caret, test_data, type= "prob")
+
+
+
+################################################################################
+mydata <- read.table("salary_data.csv", sep=",", header=T, strip.white = T, na.strings = c("NA","NaN","","?"))
+mydata <- mydata[complete.cases(mydata),]
+head(mydata)
+summary(mydata)
+
+mydata$fnlwgt <- NULL #removed becuase it's an index, not useful for models
+mydata$education.num <- NULL #removed for multicollenearity 
+mydata$relationship <- NULL  
+
+mydata$salary.class <- ifelse(mydata$salary.class == "<=50K", 0, 1)
+
+mydata$salary.class <- as.factor(mydata$salary.class)
+## Note: Since categorical variables enter into statistical models differently than continuous variables, storing data as factors insures that the modeling functions will treat such data correctly:
+## if salary was left as a number, it would run regression
+### numeric, and factors can be used in machine learning. !!characters can not
+#setting the target variable as a factor will make R run a classifier, leaving it as binary will make it regression
+
+mydata$education <- as.factor(mydata$education)
+mydata$edu <- as.numeric(as.factor(mydata$education))
+mydata$martital.status <- as.factor(mydata$martital.status)
+mydata$occupation <- as.factor(mydata$occupation)
+mydata$race <- as.factor(mydata$race)
+mydata$sex <-as.factor(mydata$sex)
+mydata$native.country <- as.factor(mydata$native.country)
+
+summary(mydata)
+class(mydata$salary.class)
+
+## Create the training and test data:
+n = nrow(mydata) # n will be ther number of obs. in data
+trainIndex = sample(1:n, 
+                    size = round(0.7*n), 
+                    replace=FALSE) # We create an index for 70% of obs. by random
+train_data = mydata[trainIndex,] # We use the index to create training data
+test_data = mydata[-trainIndex,] # We take the remaining 30% as the testing data
+summary(train_data)
+summary(test_data)
+
+
+## Build decision trees:
+tree1 <- rpart(salary.class ~ edu + sex + race, data = train_data)
+summary(tree1) # detailed summary of splits
+printcp(tree1) # display the results 
+plotcp(tree1) # visualize cross-validation results 
+plot(tree1, uniform=TRUE, 
+     main="Classification Tree for Salary Data")
+text(tree1, use.n=TRUE, all=TRUE, cex=.8)
+
+
+rpart.plot(tree1) # Create a better looking decision tree. Each node shows: 1-the predicted class (below or above 50k), 2- the predicted probability of income above 50k, 3- the percentage of observations in the node.
+
+tree_full <- rpart(salary.class ~ edu + sex + race + age + martital.status, data = train_data, 
+                   method="class",
+                   parms = list(split = "information"), 
+                   control=rpart.control(minsplit=2, minbucket=1, maxdepth = 15, cp = 0.001))
+
+# Note: The complexity parameter (cp) is used to control the size of the decision tree and to select the optimal tree size. If the cost of adding another variable to the decision tree from the current node is above the value of cp, then tree building does not continue.
+rpart.plot(tree_full)
+summary(tree_full)
+## Model Evaluation:
+predicted_values <- predict(tree_full, test_data, type= "prob") # Use the classifier to make the predictions
+
+head(predicted_values)
+threshold <- 0.5
+pred <- factor( ifelse(predicted_values[,2] > threshold, 1, 0))
+head(pred)
+levels(test_data$salary.class)[2]
+confusionMatrix(pred, test_data$salary.class, 
+                positive = levels(test_data$salary.class)[2])
+
+predicted_values <- predict(tree_full, test_data, type= "vector") # Use the classifier to make the predictions
+pred <- prediction(predicted_values, test_data$salary.class)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+
+roc.data <- data.frame(fpr=unlist(perf@x.values),
+                       tpr=unlist(perf@y.values),
+                       model="Decision Tree")
+
+ggplot(roc.data, aes(x=fpr, ymin=0, ymax=tpr)) +
+  geom_ribbon(alpha=0.2) +
+  geom_line(aes(y=tpr)) +
+  ggtitle(paste0("ROC Curve w/ AUC=", auc))
+
+# More examples: https://rstudio-pubs-static.s3.amazonaws.com/94101_c23179ee360c43e0a63a791e410e1f3a.html
+
+## Let's repeat our analysis but with ordered education:
+mydata$ord_education <- factor(mydata$education,
+                                    levels = c("Preschool","1st-4th",
+                                               "5th-6th","7th-8th",
+                                               "9th","10th",
+                                               "11th","12th","HS-grad",
+                                               "Prof-school",
+                                               "Assoc-voc","Assoc-acdm",
+                                               "Some-college","Bachelors",
+                                               "Masters","Doctorate"),
+                                    ordered=TRUE) # Convert to ordinal 
+class(mydata$education)
+class(mydata$ord_education)
+
+n = nrow(mydata) # n will be ther number of obs. in data
+trainIndex = sample(1:n, 
+                    size = round(0.7*n), 
+                    replace=FALSE) # We create an index for 70% of obs. by random
+train_data = mydata[trainIndex,] # We use the index to create training data
+test_data = mydata[-trainIndex,] # We take the remaining 30% as the testing data
+summary(train_data)
+summary(test_data)
+
+tree_full <- rpart(salary.class ~ ord_education + sex + race, data = train_data, 
+                   method="class",
+                   parms = list(split = "information"), 
+                   control=rpart.control(minsplit=2, minbucket=1, maxdepth = 15, cp = 0.001))
+
+rpart.plot(tree_full) 
+
+## Model Evaluation:
+predicted_values <- predict(tree_full, test_data, type= "prob") # Use the classifier to make the predictions
+
+head(predicted_values)
+threshold <- 0.5
+pred <- factor( ifelse(predicted_values[,2] > threshold, 1, 0))
+head(pred)
+levels(test_data$salary.class)[2]
+confusionMatrix(pred, test_data$salary.class, 
+                positive = levels(test_data$salary.class)[2])
+
+
+
+predicted_values <- predict(tree_full, test_data, type= "vector") # Use the classifier to make the predictions
+pred <- prediction(predicted_values, test_data$salary.class)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+
+roc.data <- data.frame(fpr=unlist(perf@x.values),
+                       tpr=unlist(perf@y.values),
+                       model="Decision Tree")
+
+ggplot(roc.data, aes(x=fpr, ymin=0, ymax=tpr)) +
+  geom_ribbon(alpha=0.2) +
+  geom_line(aes(y=tpr)) +
+  ggtitle(paste0("ROC Curve w/ AUC=", auc))
+
+
