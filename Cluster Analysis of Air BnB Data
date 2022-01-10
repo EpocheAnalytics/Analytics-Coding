@@ -1,0 +1,64 @@
+#R data clean-up and cluster analysis for Marketing by James Emmett
+
+#install packages
+install.packages("haven")
+install.packages("dplyr")
+install.packages("cluster")
+install.packages("clustertend")
+install.packages("dbscan")
+install.packages("tidyverse")
+###
+library(cluster)
+library(clustertend)
+library(dbscan)
+library(tidyverse)
+library(dplyr)
+library(haven)
+#packages installed
+
+mydata <- read_dta("listings.dta")
+
+#chose variables for cluster so they can be tested
+data <- mydata %>%
+  select(c(bathrooms, bedrooms, beds, reviews_per_month))
+
+#removes rows with missing data
+data <- data %>% 
+  drop_na()
+
+#scale data for cluster analysis 
+if (TRUE){
+  df <- scale(data) 
+} else{
+  df <- data
+}
+
+###
+k.means.fit <- kmeans(df, 3) # Perform k-means clustering with 3 clusters
+attributes(k.means.fit) # Check the attributes that k-means generates
+k.means.fit$centers
+k.means.fit$cluster
+k.means.fit$size
+
+hopkins(df, n = nrow(df)-1)
+# If it's not near .5, so we can do cluster analysis
+# May take a while to calculate
+
+#building the plot for cluster amount analysis 
+withinssplot <- function(data, nc=15, seed=1234){
+  wss <- (nrow(data)-1)*sum(apply(data,2,var))
+  for (i in 2:nc){
+    set.seed(seed)
+    wss[i] <- sum(kmeans(data, centers=i)$withinss)}
+  plot(1:nc, wss, type="b", xlab="Number of Clusters",
+       ylab="Within groups sum of squares")
+  }
+
+withinssplot(df, nc=10)
+#nc is max number of clusters
+#makes a chart that tells you how many clusters to use
+#max is where the chart becomes flat
+
+#visualize the cluster segments
+clusplot(df, k.means.fit$cluster, main='2D representation of the Cluster solution',
+         color=TRUE, shade=TRUE, labels=0, lines=0)
